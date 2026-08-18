@@ -5683,7 +5683,7 @@ def get_file_list():
                 return get_filename_pinyin_sort_key(file_item["file_name"])
             elif sort_by == "file_size":
                 # 文件夹按项目数量排序，文件按大小排序
-                return file_item.get("include_items", 0) if file_item["dir"] else file_item["size"]
+                return file_item.get("include_items", 0) if file_item["dir"] else file_item.get("size", 0)
             else:  # updated_at
                 return file_item["updated_at"]
 
