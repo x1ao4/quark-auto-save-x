@@ -3823,18 +3823,37 @@ def get_task_suggestions():
                 "data": dedup
             })
 
-        # 若无本地可用来源，回退到公开网络
-        base_url = base64.b64decode("aHR0cHM6Ly9zLjkxNzc4OC54eXo=").decode()
-        url = f"{base_url}/task_suggestions?q={search_query}&d={deep}"
-        response = requests.get(url)
-        return jsonify({
-            "success": True,
-            "source": "网络公开",
-            "data": response.json()
-        })
+        # 已配置本地来源但无结果：直接返回空列表，不再回退公开网络
+        if providers:
+            return jsonify({
+                "success": True,
+                "source": ", ".join(providers),
+                "data": []
+            })
+
+        # 未配置任何本地来源时，回退到公开网络
+        try:
+            base_url = base64.b64decode("aHR0cHM6Ly9zLjkxNzc4OC54eXo=").decode()
+            url = f"{base_url}/task_suggestions?q={search_query}&d={deep}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            if not (response.text or "").strip():
+                return jsonify({"success": True, "source": "网络公开", "data": []})
+            data = response.json()
+            if not isinstance(data, list):
+                data = []
+            return jsonify({
+                "success": True,
+                "source": "网络公开",
+                "data": data
+            })
+        except Exception as e:
+            logging.warning(f"公开网络资源搜索回退失败: {str(e)}")
+            return jsonify({"success": True, "source": "网络公开", "data": []})
 
     except Exception as e:
-        return jsonify({"success": True, "message": f"error: {str(e)}"})
+        logging.error(f"资源搜索失败: {str(e)}")
+        return jsonify({"success": True, "data": []})
 
 
 def _resolve_qoark_redirect(url: str) -> str:
@@ -5683,7 +5702,7 @@ def get_file_list():
                 return get_filename_pinyin_sort_key(file_item["file_name"])
             elif sort_by == "file_size":
                 # 文件夹按项目数量排序，文件按大小排序
-                return file_item.get("include_items", 0) if file_item["dir"] else file_item["size"]
+                return file_item.get("include_items", 0) if file_item["dir"] else file_item.get("size", 0)
             else:  # updated_at
                 return file_item["updated_at"]
 

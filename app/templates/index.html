@@ -76,6 +76,10 @@
       return 'bi-folder-fill';
     }
 
+    if (!fileName) {
+      return 'bi-file-earmark';
+    }
+
     // 获取文件扩展名（转为小写）
     const ext = fileName.toLowerCase().split('.').pop();
 
@@ -2032,7 +2036,7 @@
                         </div>
                       </td>
                       <td class="file-size-cell">
-                        <span class="file-size-value">{{ file.dir ? (file.include_items + ' 项') : formatFileSize(file.size || file.file_size) }}</span>
+                        <span class="file-size-value">{{ file.dir ? (file.include_items + ' 项') : formatFileSize(getFileItemSize(file)) }}</span>
                         <span v-if="showFileManagerActionBar(file)" class="file-manager-action-btns">
                           <span v-if="showFileManagerRenameBtn(file)" class="rename-record-btn" @click.stop="startRenameFile(file)" :title="fileManager.selectedFiles.length > 1 ? '批量重命名' : '重命名'">
                             <i class="bi bi-pencil"></i>
@@ -15574,9 +15578,20 @@
             this.fileManager.selectedFilesInfo = {};
           }
         },
+        // 获取文件大小（兼容 0 字节文件，避免使用 || 将 0 误判为空）
+        getFileItemSize(file) {
+          if (!file) return 0;
+          const rawSize = file.size != null ? file.size : file.file_size;
+          if (rawSize == null || rawSize === '') return 0;
+          const size = Number(rawSize);
+          return Number.isFinite(size) ? size : 0;
+        },
         formatFileSize(fileSize) {
           const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-          let size = fileSize;
+          let size = Number(fileSize);
+          if (!Number.isFinite(size) || size < 0) {
+            size = 0;
+          }
           let unitIndex = 0;
           while (size >= 1024 && unitIndex < units.length - 1) {
             size /= 1024;
