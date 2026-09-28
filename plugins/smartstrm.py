@@ -1,11 +1,24 @@
+#!/usr/bin/python3
+# -*- encoding: utf-8 -*-
+"""
+@File    :   smartstrm.py
+@Desc    :   触发 SmartStrm 生成/整理 strm 文件
+             基于 Cp0204/quark-auto-save 插件，针对 QAS-X 框架增强适配
+@Time    :   2026/09/27
+@Author  :   xiaoQQya, x1ao4, yanshhhh
+"""
 import requests
 
 
 class Smartstrm:
+
     default_config = {
-        "webhook": "",  # SmartStrm Webhook 地址
+        "webhook": "",   # SmartStrm Webhook 地址
         "strmtask": "",  # SmartStrm 任务名，支持多个如 `tv,movie`
-        "xlist_path_fix": "",  # 路径映射， SmartStrm 任务使用 quark 驱动时无须填写；使用 openlist 驱动时需填写 `/storage_mount_path:/quark_root_dir` ，例如把夸克根目录挂载在 OpenList 的 /quark 下，则填写 `/quark:/` ；以及 SmartStrm 会使 OpenList 强制刷新目录，无需再用 alist 插件刷新。
+        "xlist_path_fix": "",  # 路径映射；quark 驱动无须填写；openlist 驱动形如 `/quark:/`
+    }
+    default_task_config = {
+        "auto_trigger": True,  # 是否在转存完成后自动触发 SmartStrm
     }
     is_active = False
 
@@ -17,9 +30,62 @@ class Smartstrm:
                     setattr(self, key, kwargs[key])
                 else:
                     print(f"{self.plugin_name} 模块缺少必要参数: {key}")
+            # 标准化 URL，避免末尾斜杠导致路径拼接出现 //
+            if self.webhook:
+                self.webhook = self.webhook.strip()
+                if not self.webhook.startswith(("http://", "https://")):
+                    self.webhook = f"http://{self.webhook}"
+                self.webhook = self.webhook.rstrip("/")
+
             if self.webhook and self.strmtask:
                 if self.get_info():
                     self.is_active = True
+
+    def run(self, task, **kwargs):
+        if not self.is_active:
+            return
+
+        task_config = task.get("addition", {}).get(
+            self.plugin_name, self.default_task_config
+        )
+        if not task_config.get("auto_trigger"):
+            return
+
+        if not task.get("savepath"):
+            return
+
+        savepath = task["savepath"].strip().rstrip("/")
+        if not savepath.startswith("/"):
+            savepath = "/" + savepath
+
+        payload = {
+            "event": "qas_strm",
+            "data": {
+                "strmtask": self.strmtask,
+                "savepath": savepath,
+                "xlist_path_fix": self.xlist_path_fix,
+            },
+        }
+
+        try:
+            response = requests.request(
+                "POST",
+                self.webhook,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=5,
+            )
+            response = response.json()
+            if response.get("success"):
+                task_data = response.get("task") or {}
+                print(
+                    f"🌐 SmartStrm: [{task_data.get('name', '')}] "
+                    f"{task_data.get('storage_path', savepath)} 触发成功 ✅"
+                )
+            else:
+                print(f"🌐 SmartStrm: 触发失败 ❌ {response.get('message', '')}")
+        except Exception as e:
+            print(f"🌐 SmartStrm: 触发出错 ❌ {e}")
 
     def get_info(self):
         """获取 SmartStrm 信息"""
@@ -31,45 +97,14 @@ class Smartstrm:
             )
             response = response.json()
             if response.get("success"):
-                print(f"SmartStrm 触发任务: 连接成功 {response.get('version','')}")
-                return response
-            print(f"SmartStrm 触发任务：连接失败 {response.get('message','')}")
-            return None
-        except Exception as e:
-            print(f"SmartStrm 触发任务：连接出错 {str(e)}")
-            return None
-
-    def run(self, task, **kwargs):
-        """
-        插件主入口函数
-        :param task: 任务配置
-        :param kwargs: 其他参数
-        """
-        try:
-            # 准备发送的数据
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "event": "qas_strm",
-                "data": {
-                    "strmtask": self.strmtask,
-                    "savepath": task["savepath"],
-                    "xlist_path_fix": self.xlist_path_fix,
-                },
-            }
-            # 发送 POST 请求
-            response = requests.request(
-                "POST",
-                self.webhook,
-                headers=headers,
-                json=payload,
-                timeout=5,
-            )
-            response = response.json()
-            if response.get("success"):
                 print(
-                    f"SmartStrm 触发任务: [{response['task']['name']}] {response['task']['storage_path']} 成功✅"
+                    f"🌐 SmartStrm: 连接成功 {response.get('version', '')}"
                 )
-            else:
-                print(f"SmartStrm 触发任务: {response['message']}")
+                return response
+            print(
+                f"🌐 SmartStrm: 连接失败 ❌ {response.get('message', '')}"
+            )
+            return None
         except Exception as e:
-            print(f"SmartStrm 触发任务：出错 {str(e)}")
+            print(f"🌐 SmartStrm: 连接出错 ❌ {e}")
+            return None
